@@ -1,0 +1,18 @@
+name: OrdosExp
+main: org.landofordos.ordosexp.OrdosExp
+version: 0.1
+depend: [Vault]
+permissions:
+    ordosexp.*:
+        description: Gives access to all OrdosName commands
+        default: op
+        children:
+            ordosexp.place: true
+            ordosexp.reloadconfig: true            
+    ordosexp.place:
+        description: Allows placement (and destruction) of signs for OrdosExp
+        default: op
+    ordosexp.reloadconfig:
+        description: Allows access to reloading the plugin's configuration file
+        default: op
+            
