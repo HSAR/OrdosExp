@@ -206,7 +206,7 @@ public class OrdosExp extends JavaPlugin implements Listener {
 		}
 		// if the user tried to fake a sign without having permission, cancel the event.
 		String line0 = event.getLine(0);
-		if ((line0.equalsIgnoreCase("[OrdosExp]")) && (!(player.hasPermission("ordosname.place")))) {
+		if ((line0.equalsIgnoreCase("[OrdosExp]")) && (!(player.hasPermission("ordosexp.place")))) {
 			player.sendMessage(ChatColor.RED + "You don't have permission to place OrdosExp signs.");
 			event.setCancelled(true);
 			return;
@@ -222,7 +222,7 @@ public class OrdosExp extends JavaPlugin implements Listener {
 			Sign sign = (Sign) block.getState();
 			if (sign.getLine(0).equals(ChatColor.RED + "[OrdosExp]")) {
 				// if the sign is an OrdosExp sign, check if users have permission - if not, cancel the event.
-				if (!(player.hasPermission("ordosname.place"))) {
+				if (!(player.hasPermission("ordosexp.place"))) {
 					player.sendMessage(ChatColor.RED + "You don't have permission to destroy OrdosExp signs.");
 					event.setCancelled(true);
 					return;
