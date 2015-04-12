@@ -1,5 +1,6 @@
 package org.landofordos.ordosexp;
 
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.bukkit.ChatColor;
@@ -9,6 +10,7 @@ import org.bukkit.block.Block;
 import org.bukkit.block.Sign;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -30,8 +32,13 @@ public class OrdosExp extends JavaPlugin implements Listener {
 	public static Economy econ = null;
 	//
 	private boolean verbose;
+	private boolean keepNetZero;
+	private long storedExp;
 
 	public void onDisable() {
+	    this.getConfig().set("storedExp", storedExp);
+	    this.saveConfig();
+	    logger.info("Saved stored XP in config file.");
 		logger.info("Disabled.");
 	}
 
@@ -43,25 +50,9 @@ public class OrdosExp extends JavaPlugin implements Listener {
 		logger = getLogger();
 		// save config to default location if not already there
 		this.saveDefaultConfig();
-		// verbose logging? retrieve value from config file.
-		verbose = this.getConfig().getBoolean("verboselogging");
-		if (verbose) {
-			logger.info("Verbose logging enabled.");
-		} else {
-			logger.info("Verbose logging disabled.");
-		}
 		// register events
 		server.getPluginManager().registerEvents(this, this);
-		// first-run initialisation
-		final boolean firstrun = this.getConfig().getBoolean("firstrun");
-		if (firstrun) {
-			// Whatever first run initialisation is required
-			this.getConfig().set("firstrun", false);
-			this.saveConfig();
-			if (verbose) {
-				logger.info("First-run initialisation complete.");
-			}
-		}
+		loadConfig();
 		if (!setupEconomy()) {
 			logger.info("Vault dependency unsatisfied (Vault could not be found)!");
 			getServer().getPluginManager().disablePlugin(this);
@@ -69,7 +60,42 @@ public class OrdosExp extends JavaPlugin implements Listener {
 		}
 	}
 
-	private boolean setupEconomy() {
+	private void loadConfig() {
+        FileConfiguration config = this.getConfig();
+        // first-run initialisation
+        final boolean firstrun = config.getBoolean("firstrun");
+        if (firstrun) {
+            // Whatever first run initialisation is required
+            config.set("firstrun", false);
+            this.saveConfig();
+            if (verbose) {
+                logger.info("First-run initialisation complete.");
+            }
+        }
+        // plugin vars
+        // verbose logging? retrieve value from config file.
+        verbose = this.getConfig().getBoolean("verboselogging");
+        if (verbose) {
+            logger.info("Verbose logging enabled.");
+        } else {
+            logger.info("Verbose logging disabled.");
+        }
+        // keepNetZero
+        keepNetZero = config.getBoolean("keepNetZero");
+        if (keepNetZero) {
+            logger.info("EXP sales are restricted to net zero.");
+        } else {
+            logger.info("EXP sales are unrestricted.");
+        }
+        // be extra careful about storedExp
+        long configStoredExp = config.getLong("storedExp", -1l);
+        if (configStoredExp > 0) {
+            storedExp = configStoredExp;
+        }
+        logger.info("There is currently " + storedExp + " stored.");
+    }
+
+    private boolean setupEconomy() {
 		if (getServer().getPluginManager().getPlugin("Vault") == null) {
 			return false;
 		}
@@ -80,16 +106,33 @@ public class OrdosExp extends JavaPlugin implements Listener {
 		econ = rsp.getProvider();
 		return econ != null;
 	}
+    
+    private boolean logChangeInXP(int expChange) {
+        storedExp += expChange;
+        this.getConfig().set("storedExp", storedExp);
+        this.saveConfig();
+        // check successful write
+        if (storedExp == this.getConfig().getLong("storedExp", -1l)) {
+            return true;
+        } else {
+            logger.log(Level.SEVERE, "Saving to configuration file failed. OrdosExp cannot function while this continues.");
+            return false;
+        }     
+    }
 
 	private boolean sellXP(Player player, int expGained, double moneyLost) {
 		// this SELLS XP TO THE PLAYER
 		try {
-			if (econ.getBalance(player.getName()) > moneyLost) {
-				econ.withdrawPlayer(player.getName(), moneyLost);
-				player.giveExp(expGained);
-				player.sendMessage(ChatColor.DARK_GREEN + "You purchased " + ChatColor.WHITE + expGained + " XP" + ChatColor.DARK_GREEN + " for "
-						+ ChatColor.WHITE + moneyLost + " " + econ.currencyNamePlural());
-				logger.info("Player " + player.getName() + " purchased " + expGained + " XP for " + moneyLost + " " + econ.currencyNamePlural());
+			if (econ.getBalance(player) > moneyLost) {
+			    if (logChangeInXP(expGained)) {
+    				econ.withdrawPlayer(player, moneyLost);
+    				player.giveExp(expGained);
+    				player.sendMessage(ChatColor.DARK_GREEN + "You purchased " + ChatColor.WHITE + expGained + " XP" + ChatColor.DARK_GREEN + " for "
+    						+ ChatColor.WHITE + moneyLost + " " + econ.currencyNamePlural());
+    				logger.info("Player " + player.getName() + " purchased " + expGained + " XP for " + moneyLost + " " + econ.currencyNamePlural());
+			    } else {
+			        player.sendMessage(ChatColor.RED + "Transaction failed. Please inform an admin.");
+			    }
 			} else {
 				if (verbose) {
 					logger.info("Player " + player.getName() + " tried to purchase " + expGained + " for " + moneyLost + " "
@@ -107,11 +150,15 @@ public class OrdosExp extends JavaPlugin implements Listener {
 		// this BUYS XP FROM THE PLAYER
 		try {
 			if (player.getTotalExperience() >= expLost) {
-				player.giveExp(expLost * -1);
-				econ.depositPlayer(player.getName(), moneyGained);
-				player.sendMessage(ChatColor.DARK_GREEN + "You sold " + ChatColor.WHITE + expLost + " XP" + ChatColor.DARK_GREEN + " for "
-						+ ChatColor.WHITE + moneyGained + " " + econ.currencyNamePlural());
-				logger.info("Player " + player.getName() + " sold " + expLost + " XP for " + moneyGained + " " + econ.currencyNamePlural());
+                if (logChangeInXP(expLost * -1)) {
+    				player.giveExp(expLost * -1);
+    				econ.depositPlayer(player, moneyGained);
+    				player.sendMessage(ChatColor.DARK_GREEN + "You sold " + ChatColor.WHITE + expLost + " XP" + ChatColor.DARK_GREEN + " for "
+    						+ ChatColor.WHITE + moneyGained + " " + econ.currencyNamePlural());
+    				logger.info("Player " + player.getName() + " sold " + expLost + " XP for " + moneyGained + " " + econ.currencyNamePlural());
+                } else {
+                    player.sendMessage(ChatColor.RED + "Transaction failed. Please inform an admin.");
+                }
 			} else {
 				if (verbose) {
 					logger.info("Player " + player.getName() + " tried to sell " + expLost + " XP for " + moneyGained + " "
@@ -126,7 +173,19 @@ public class OrdosExp extends JavaPlugin implements Listener {
 	}
 
 	public boolean onCommand(CommandSender sender, Command cmd, String commandLabel, String[] args) {
-		return false;
+        // code to reload configuration
+        if ((args.length == 1) && (args[0].equalsIgnoreCase("reload")) && (sender.hasPermission("ordosexp.reloadconfig"))) {
+            loadConfig();
+            return true;
+        } else if ((args.length == 1) && (args[0].equalsIgnoreCase("stock")) && (sender.hasPermission("ordosexp.checkstored"))) {
+            if (keepNetZero) {
+                sender.sendMessage(ChatColor.DARK_GREEN + "" + storedExp + " XP is held by OrdosExp.");
+            } else {
+                sender.sendMessage(ChatColor.DARK_GREEN + "OrdosExp sales are not currently restricted.");
+            }
+            return true;
+        }
+        return false;
 	}
 
 	@EventHandler(priority = EventPriority.NORMAL)
@@ -156,10 +215,18 @@ public class OrdosExp extends JavaPlugin implements Listener {
 						}
 						// is this sign selling XP, or buying it?
 						if (line1.endsWith("XP")) {
-							sellXP(player, (int) buyamount, sellamount);
+		                    if (!player.hasPermission("ordosexp.buyfromserver")) {
+		                        player.sendMessage(ChatColor.RED + "You do not have permission to buy XP.");                      
+		                    } else {
+		                        sellXP(player, (int) buyamount, sellamount);
+		                    }
 						}
 						if (line2.endsWith("XP")) {
-							buyXP(player, buyamount, (int) sellamount);
+                            if (!player.hasPermission("ordosexp.selltoserver")) {
+                                player.sendMessage(ChatColor.RED + "You do not have permission to sell XP.");                      
+                            } else {
+                                buyXP(player, buyamount, (int) sellamount);
+                            }
 						}
 					}
 				}

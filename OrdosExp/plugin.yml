@@ -15,4 +15,13 @@ permissions:
     ordosexp.reloadconfig:
         description: Allows access to reloading the plugin's configuration file
         default: op
+    ordosexp.checkstored:
+    	description: Allows user to check amount of stored XP.
+    	default: true
+	ordosexp.selltoserver:
+		description: Allows the user to sell XP to the server.
+		default: true
+	ordosexp.buyfromserver:
+		description: Allows the user to buy XP from the server.
+		default: true
             
