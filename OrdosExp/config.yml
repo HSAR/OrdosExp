@@ -1,5 +1,5 @@
 # Don't touch the value of firstrun!
 firstrun: true
 verboselogging: false
-keepnetzero: false
-storedexp: 0
+keepNetZero: false
+storedExp: 0

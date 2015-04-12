@@ -1,5 +1,6 @@
 package org.landofordos.ordosexp;
 
+import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -61,6 +62,7 @@ public class OrdosExp extends JavaPlugin implements Listener {
 	}
 
 	private void loadConfig() {
+	    this.reloadConfig();
         FileConfiguration config = this.getConfig();
         // first-run initialisation
         final boolean firstrun = config.getBoolean("firstrun");
@@ -88,11 +90,12 @@ public class OrdosExp extends JavaPlugin implements Listener {
             logger.info("EXP sales are unrestricted.");
         }
         // be extra careful about storedExp
-        long configStoredExp = config.getLong("storedExp", -1l);
+        /*long configStoredExp = config.getLong("storedExp", -1l);
         if (configStoredExp > 0) {
             storedExp = configStoredExp;
-        }
-        logger.info("There is currently " + storedExp + " stored.");
+        }*/
+        storedExp = config.getLong("storedExp", 0);
+        logger.info("There is currently " + storedExp + " XP stored.");
     }
 
     private boolean setupEconomy() {
@@ -107,61 +110,72 @@ public class OrdosExp extends JavaPlugin implements Listener {
 		return econ != null;
 	}
     
-    private boolean logChangeInXP(int expChange) {
-        storedExp += expChange;
-        this.getConfig().set("storedExp", storedExp);
-        this.saveConfig();
-        // check successful write
-        if (storedExp == this.getConfig().getLong("storedExp", -1l)) {
-            return true;
-        } else {
-            logger.log(Level.SEVERE, "Saving to configuration file failed. OrdosExp cannot function while this continues.");
+    private boolean serverGainsXP(int expChange) throws IOException {
+        // Positive number = SERVER GAINS XP
+        // check for net zero failure case        
+        if (keepNetZero && expChange < 1 && storedExp < 1) {
             return false;
-        }     
+        } else {
+            storedExp += expChange;
+            this.getConfig().set("storedExp", storedExp);
+            this.saveConfig();
+            // check successful write
+            this.reloadConfig();
+            if (storedExp == this.getConfig().getLong("storedExp", -1l)) {
+                return true;
+            } else {
+                logger.log(Level.SEVERE, "Saving to configuration file failed. OrdosExp cannot function while this continues.");
+                throw new IOException("Configuration file save failed.");
+            }    
+        }
     }
 
-	private boolean sellXP(Player player, int expGained, double moneyLost) {
+	private boolean sellXPToPlayer(Player player, int expGained, double moneyLost) {
 		// this SELLS XP TO THE PLAYER
-		try {
-			if (econ.getBalance(player) > moneyLost) {
-			    if (logChangeInXP(expGained)) {
-    				econ.withdrawPlayer(player, moneyLost);
-    				player.giveExp(expGained);
-    				player.sendMessage(ChatColor.DARK_GREEN + "You purchased " + ChatColor.WHITE + expGained + " XP" + ChatColor.DARK_GREEN + " for "
-    						+ ChatColor.WHITE + moneyLost + " " + econ.currencyNamePlural());
-    				logger.info("Player " + player.getName() + " purchased " + expGained + " XP for " + moneyLost + " " + econ.currencyNamePlural());
-			    } else {
-			        player.sendMessage(ChatColor.RED + "Transaction failed. Please inform an admin.");
-			    }
-			} else {
-				if (verbose) {
-					logger.info("Player " + player.getName() + " tried to purchase " + expGained + " for " + moneyLost + " "
-							+ econ.currencyNamePlural() + "but did not have enough credit.");
-				}
-				player.sendMessage(ChatColor.RED + "You don't have enough money to do that.");
+		if (econ.getBalance(player) > moneyLost) {
+		    try {
+                if (serverGainsXP(expGained * -1)) {
+                	econ.withdrawPlayer(player, moneyLost);
+                	player.giveExp(expGained);
+                	player.sendMessage(ChatColor.DARK_GREEN + "You purchased " + ChatColor.WHITE + expGained + " XP" + ChatColor.DARK_GREEN + " for "
+                			+ ChatColor.WHITE + moneyLost + " " + econ.currencyNamePlural());
+                	logger.info(player.getName() + " purchased " + expGained + " XP for " + moneyLost + " " + econ.currencyNamePlural());
+                } else {
+                    if (verbose) {
+                        logger.info(player.getName() + " tried to purchase " + expGained + " for " + moneyLost + " "
+                                + econ.currencyNamePlural() + "but there wasn't enough XP stored.");
+                    }
+                    player.sendMessage(ChatColor.RED + "The server does not have any XP for purchase.");			        
+                }
+            } catch (IOException e) {
+                player.sendMessage(ChatColor.RED + "Transaction failed. Please inform an admin.");
+            }
+		} else {
+			if (verbose) {
+				logger.info(player.getName() + " tried to purchase " + expGained + " for " + moneyLost + " "
+						+ econ.currencyNamePlural() + "but did not have enough credit.");
 			}
-		} catch (Exception e) {
-			return false;
+			player.sendMessage(ChatColor.RED + "You don't have enough money to do that.");
 		}
 		return true;
 	}
 
-	private boolean buyXP(Player player, double moneyGained, int expLost) {
+	private boolean buyXPFromPlayer(Player player, int expLost, double moneyGained) {
 		// this BUYS XP FROM THE PLAYER
 		try {
 			if (player.getTotalExperience() >= expLost) {
-                if (logChangeInXP(expLost * -1)) {
+                if (serverGainsXP(expLost)) {
     				player.giveExp(expLost * -1);
     				econ.depositPlayer(player, moneyGained);
     				player.sendMessage(ChatColor.DARK_GREEN + "You sold " + ChatColor.WHITE + expLost + " XP" + ChatColor.DARK_GREEN + " for "
     						+ ChatColor.WHITE + moneyGained + " " + econ.currencyNamePlural());
-    				logger.info("Player " + player.getName() + " sold " + expLost + " XP for " + moneyGained + " " + econ.currencyNamePlural());
+    				logger.info(player.getName() + " sold " + expLost + " XP for " + moneyGained + " " + econ.currencyNamePlural());
                 } else {
                     player.sendMessage(ChatColor.RED + "Transaction failed. Please inform an admin.");
                 }
 			} else {
 				if (verbose) {
-					logger.info("Player " + player.getName() + " tried to sell " + expLost + " XP for " + moneyGained + " "
+					logger.info(player.getName() + " tried to sell " + expLost + " XP for " + moneyGained + " "
 							+ econ.currencyNamePlural() + "but did not have enough experience points to sell.");
 				}
 				player.sendMessage(ChatColor.RED + "You don't have enough experience points to do that.");
@@ -177,13 +191,17 @@ public class OrdosExp extends JavaPlugin implements Listener {
         if ((args.length == 1) && (args[0].equalsIgnoreCase("reload")) && (sender.hasPermission("ordosexp.reloadconfig"))) {
             loadConfig();
             return true;
-        } else if ((args.length == 1) && (args[0].equalsIgnoreCase("stock")) && (sender.hasPermission("ordosexp.checkstored"))) {
-            if (keepNetZero) {
-                sender.sendMessage(ChatColor.DARK_GREEN + "" + storedExp + " XP is held by OrdosExp.");
+        } else if ((args.length == 1) && (args[0].equalsIgnoreCase("stock"))) {
+            if (!sender.hasPermission("ordosexp.checkstored")) {
+                sender.sendMessage(ChatColor.RED + "You don't have permission to check the stored XP.");                
             } else {
-                sender.sendMessage(ChatColor.DARK_GREEN + "OrdosExp sales are not currently restricted.");
-            }
-            return true;
+                if (keepNetZero) {
+                    sender.sendMessage(ChatColor.WHITE + "" + storedExp + "" + ChatColor.DARK_GREEN + " XP is held by OrdosExp.");
+                } else {
+                    sender.sendMessage(ChatColor.DARK_GREEN + "OrdosExp sales are not currently restricted.");
+                }
+                return true;
+            } 
         }
         return false;
 	}
@@ -202,32 +220,39 @@ public class OrdosExp extends JavaPlugin implements Listener {
 					// if it is, check the second and third lines for appropriate data required
 					String line1 = sign.getLine(1);
 					String line2 = sign.getLine(2);
-					if ((line1.startsWith("Buy ")) && (line2.startsWith("For "))) {
-						double buyamount;
-						double sellamount;
+		            if (((line1.startsWith("Buy ")) || (line1.startsWith("Sell "))) && (line1.endsWith("XP")) && (line2.startsWith("For "))) {
+						int expChange;
+						double moneyChange;
 						// use regex to strip out all non-numeric characters from both sttrings
 						try {
-							buyamount = Double.parseDouble(line1.replaceAll("[^\\d.]", ""));
-							sellamount = Double.parseDouble(line2.replaceAll("[^\\d.]", ""));
+						    expChange = Integer.parseInt(line1.replaceAll("[^\\d.]", ""));
+						    moneyChange = Double.parseDouble(line2.replaceAll("[^\\d.]", ""));
 						} catch (NumberFormatException e) {
 							player.sendMessage(ChatColor.RED + "This sign has not been set up correctly. Contact an admin for assistance.");
 							return;
 						}
 						// is this sign selling XP, or buying it?
-						if (line1.endsWith("XP")) {
+						if (line1.startsWith("Buy ")) {
 		                    if (!player.hasPermission("ordosexp.buyfromserver")) {
 		                        player.sendMessage(ChatColor.RED + "You do not have permission to buy XP.");                      
 		                    } else {
-		                        sellXP(player, (int) buyamount, sellamount);
+		                        sellXPToPlayer(player, expChange, moneyChange);
 		                    }
 						}
-						if (line2.endsWith("XP")) {
+						if (line1.startsWith("Sell ")) {
                             if (!player.hasPermission("ordosexp.selltoserver")) {
                                 player.sendMessage(ChatColor.RED + "You do not have permission to sell XP.");                      
                             } else {
-                                buyXP(player, buyamount, (int) sellamount);
+                                buyXPFromPlayer(player, expChange, moneyChange);
                             }
 						}
+					} else if (line1.toLowerCase().contains("xp") && line1.toLowerCase().contains("stock")) {
+			            if (!player.hasPermission("ordosexp.checkstored")) {
+			                player.sendMessage(ChatColor.RED + "You don't have permission to check the stored XP.");                
+			            } else {
+			                sign.setLine(2, "" + storedExp);
+			                sign.update();
+			            }					    
 					}
 				}
 			} else {
@@ -242,33 +267,43 @@ public class OrdosExp extends JavaPlugin implements Listener {
 		Player player = event.getPlayer();
 		// first of all, check the bottom line for five dashes that signify clearly it's an OrdosExp sign.
 		if (event.getLine(3).equalsIgnoreCase("-----")) {
+            String line1 = event.getLine(1);
+            String line2 = event.getLine(2);
 			// then check it has the correct buy and sell strings
-			if ((event.getLine(1).startsWith("Buy ")) && (event.getLine(2).startsWith("For "))) {
-				// and check that ONLY ONE of those lines has "XP" on it, using XOR
-				if ((event.getLine(1).endsWith("XP")) ^ (event.getLine(2).endsWith("XP"))) {
-					// finally, check the numbers themselves for errors - parse them and catch exceptions.
-					try {
-						Double.parseDouble(event.getLine(1).replaceAll("[^\\d.]", ""));
-						Double.parseDouble(event.getLine(2).replaceAll("[^\\d.]", ""));
-					} catch (NumberFormatException e) {
-						player.sendMessage(ChatColor.RED + "This sign has not been set up correctly.");
-						return;
+			if (((line1.startsWith("Buy ")) || (line1.startsWith("Sell "))) && (line1.endsWith("XP")) && (line2.startsWith("For "))) {
+            // check the user has appropriate permissions to place a sign like this
+                if (player.hasPermission("ordosexp.place")) {
+    				// finally, check the numbers themselves for errors - parse them and catch exceptions.
+    				try {
+    					Double.parseDouble(line1.replaceAll("[^\\d.]", ""));
+    					Double.parseDouble(line2.replaceAll("[^\\d.]", ""));
+    				} catch (NumberFormatException e) {
+    					player.sendMessage(ChatColor.RED + "This sign has not been set up correctly.");
+    					return;
+    				}
+					// if all is well, place [OrdosExp] at the top of the sign as a confirmation.
+					if (verbose) {
+						Block block = event.getBlock();
+						logger.info("Player " + player.getName() + " created a new OrdosExp sign at " + block.getLocation().toString());
 					}
-					// check the user has appropriate permissions to place a sign like this
-					if (player.hasPermission("ordosexp.place")) {
-						// if all is well, place [OrdosExp] at the top of the sign as a confirmation.
-						if (verbose) {
-							Block block = event.getBlock();
-							logger.info("Player " + player.getName() + " created a new OrdosExp sign at " + block.getLocation().toString());
-						}
-						event.setLine(0, ChatColor.RED + "[OrdosExp]");
-						return;
-					} else {
-						player.sendMessage(ChatColor.RED + "You don't have permission to place OrdosExp signs.");
-						event.setCancelled(true);
-						return;
-					}
+					event.setLine(0, ChatColor.RED + "[OrdosExp]");
+					return;
+				} else {
+					player.sendMessage(ChatColor.RED + "You don't have permission to place OrdosExp signs.");
+					event.setCancelled(true);
+					return;
 				}
+                
+			} else if (line1.toLowerCase().contains("xp") && line1.toLowerCase().contains("stock")) {
+                if (player.hasPermission("ordosexp.place")) {
+    			    // this is a stock check sign - add the OrdosExp tag and set the current stock level
+                    event.setLine(0, ChatColor.RED + "[OrdosExp]");
+    			    event.setLine(2, "" + storedExp);
+                } else {
+                    player.sendMessage(ChatColor.RED + "You don't have permission to place OrdosExp signs.");
+                    event.setCancelled(true);
+                    return;
+                }
 			}
 		}
 		// if the user tried to fake a sign without having permission, cancel the event.

@@ -2,6 +2,12 @@ name: OrdosExp
 main: org.landofordos.ordosexp.OrdosExp
 version: 0.1
 depend: [Vault]
+commands:
+   ordosexp:
+      description: OrdosExp base command.
+      usage: /ordosexp help
+      permission: ordosexp.*
+      permission-message: You don't have permission to use this.
 permissions:
     ordosexp.*:
         description: Gives access to all OrdosName commands
@@ -16,12 +22,12 @@ permissions:
         description: Allows access to reloading the plugin's configuration file
         default: op
     ordosexp.checkstored:
-    	description: Allows user to check amount of stored XP.
-    	default: true
-	ordosexp.selltoserver:
-		description: Allows the user to sell XP to the server.
-		default: true
-	ordosexp.buyfromserver:
-		description: Allows the user to buy XP from the server.
-		default: true
+        description: Allows user to check amount of stored XP.
+        default: true
+    ordosexp.selltoserver:
+        description: Allows the user to sell XP to the server.
+        default: true
+    ordosexp.buyfromserver:
+        description: Allows the user to buy XP from the server.
+        default: true
             
