@@ -136,7 +136,8 @@ public class OrdosExp extends JavaPlugin implements Listener {
 		    try {
                 if (serverGainsXP(expGained * -1)) {
                 	econ.withdrawPlayer(player, moneyLost);
-                	player.giveExp(expGained);
+                    ExperienceManager expMan = new ExperienceManager(player);
+                    expMan.changeExp(expGained);
                 	player.sendMessage(ChatColor.DARK_GREEN + "You purchased " + ChatColor.WHITE + expGained + " XP" + ChatColor.DARK_GREEN + " for "
                 			+ ChatColor.WHITE + moneyLost + " " + econ.currencyNamePlural());
                 	logger.info(player.getName() + " purchased " + expGained + " XP for " + moneyLost + " " + econ.currencyNamePlural());
@@ -163,9 +164,10 @@ public class OrdosExp extends JavaPlugin implements Listener {
 	private boolean buyXPFromPlayer(Player player, int expLost, double moneyGained) {
 		// this BUYS XP FROM THE PLAYER
 		try {
-			if (player.getTotalExperience() >= expLost) {
+            ExperienceManager expMan = new ExperienceManager(player);
+			if (expMan.getCurrentExp() >= expLost) {
                 if (serverGainsXP(expLost)) {
-    				player.giveExp(expLost * -1);
+                    expMan.changeExp(expLost * -1);
     				econ.depositPlayer(player, moneyGained);
     				player.sendMessage(ChatColor.DARK_GREEN + "You sold " + ChatColor.WHITE + expLost + " XP" + ChatColor.DARK_GREEN + " for "
     						+ ChatColor.WHITE + moneyGained + " " + econ.currencyNamePlural());
